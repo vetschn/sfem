@@ -1,0 +1,7 @@
+meshio
+numpy
+scipy
+pytools
+vtk
+pyvista
+bsparse@ git+https://github.com/vetschn/bsparse

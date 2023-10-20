@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.isort]
+profile = "black"
+
+[project]
+name = "sfem"
+authors = [{ name = "Nicolas Vetsch", email = "vetschn@iis.ee.ethz.ch" }]
+description = "Matrix assembly on linear simplex meshes."
+license = { file = "LICENSE" }
+classifiers = [
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering",
+]
+keywords = ["Finite-Elements", "Simplex Elements", "Matrix Assembly"]
+dynamic = ["version"]
+requires-python = ">=3.11"
+dependencies = [
+    "meshio",
+    "numpy",
+    "scipy",
+    "pytools",
+    "vtk",
+    "pyvista",
+    "bsparse@git+https://github.com/vetschn/bsparse",
+]
+
+[project.urls]
+Code = "https://github.com/vetschn/sfem"
+
+[tool.setuptools.dynamic]
+version = { attr = "sfem.__about__.__version__" }
+
+[tool.pytest.ini_options]
+addopts = ["--import-mode=importlib"]
+testpaths = ["tests"]

@@ -4,8 +4,8 @@ from typing import Callable
 import meshio
 import numpy as np
 import pyvista as pv
-import scipy.sparse as sp
 import vtk
+from bsparse import sparse
 from numpy.lib import recfunctions as rfn
 from numpy.typing import ArrayLike
 
@@ -17,11 +17,6 @@ VTK_MESH_TYPES = {
     "triangle": vtk.VTK_TRIANGLE,
     "tetra": vtk.VTK_TETRA,
 }
-
-
-def _one(r: ArrayLike) -> float:
-    """Returns one."""
-    return 1.0
 
 
 class Mesh:
@@ -72,7 +67,10 @@ class Mesh:
 
     def __str__(self) -> str:
         """Returns a string representation of the mesh."""
-        return f"Mesh({self.num_nodes} nodes, {self.num_elements} elements of type {self.etype.__name__})"
+        return (
+            f"Mesh({self.num_nodes} nodes, "
+            f"{self.num_elements} elements of type {self.etype.__name__})"
+        )
 
     def __repr__(self) -> str:
         """Returns a string representation of the mesh."""
@@ -234,17 +232,17 @@ class Mesh:
     def assemble_matrix(
         self,
         matrix_type: str,
-        function: Callable = None,
         dtype: type = float,
+        function: Callable = None,
         parallel: bool = True,
-    ) -> sp.lil_array:
+    ) -> sparse.COO:
         """Assembles the specified matrix type for the mesh.
 
         Parameters
         ----------
         matrix_type : str
             The type of matrix to assemble. Can be "stiffness" or
-            "mass", "lumped_mass" or "gradient".
+            "mass", "lumped_mass".
         function : callable, optional
             A spatial weighting function for the matrix. If not given,
             the identity function is used.
@@ -256,25 +254,30 @@ class Mesh:
 
         Returns
         -------
-        sp.lil_array
-            The assembled matrix in CSR format.
+        sparse.COO
+            The assembled matrix in coordinate format.
 
         """
         # TODO: Add support for gradient matrices.
-        if matrix_type == "gradient":
-            raise NotImplementedError("Gradient matrix not supported (yet).")
+        if matrix_type not in ("stiffness", "mass", "lumped_mass"):
+            raise ValueError(
+                f"Unknown matrix type '{matrix_type}'. "
+                "Must be 'stiffness', 'mass', or 'lumped_mass'."
+            )
 
         if matrix_type == "lumped_mass":
             if function is None:
-                function = _one
 
-            return sp.diags(function(self.nodes)).tocsr()
+                def function(x):
+                    return 1
 
-        global get_local_matrix  # Sketchy move to make it picklable.
+            return sparse.diag(function(self.nodes))
+
+        global get_local_matrix
 
         def get_local_matrix(element: SimplexElement) -> np.ndarray:
             """Returns the local matrix for the given element."""
-            return element.get_matrix(matrix_type, function)
+            return element.get_matrix(matrix_type, dtype, function)
 
         if parallel:
             with Pool() as pool:
@@ -286,11 +289,33 @@ class Mesh:
         dof_shape = (1, 1) if len(dof_shape) == 0 else dof_shape
         global_shape, local_shape = self._get_matrix_shapes(dof_shape)
 
-        matrix = sp.lil_array(global_shape, dtype=dtype)
+        coords = []
+        data = []
         for element, local_matrix in zip(self.elements, local_matrices):
             indices = self._get_global_indices(element, dof_shape)
+            coords.extend([(i, j) for j in indices for i in indices])
             local_matrix = self._reshape_local_matrix(local_matrix, local_shape)
-            matrix[np.ix_(indices, indices)] += local_matrix
+            data.extend(local_matrix.ravel())
+
+        coords, inverse = np.unique(coords, axis=0, return_inverse=True)
+
+        data = np.array(data, dtype=dtype)
+        if np.iscomplexobj(data):
+            # NumPy's bincount does not support complex numbers.
+            data_real = np.bincount(inverse, weights=data.real)
+            data_imag = np.bincount(inverse, weights=data.imag)
+            data = data_real + 1j * data_imag
+        else:
+            data = np.bincount(inverse, weights=data)
+
+        ind = np.nonzero(data)
+        matrix = sparse.COO(
+            coords[:, 0][ind],
+            coords[:, 1][ind],
+            data[ind],
+            shape=global_shape,
+            dtype=dtype,
+        )
 
         return matrix
 

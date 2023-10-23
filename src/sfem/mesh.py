@@ -441,4 +441,5 @@ class Mesh:
             The finite element mesh.
 
         """
-        return cls(mesh.points, mesh.cells_dict[etype.name], etype)
+        points = mesh.points[:, : etype.dim]
+        return cls(points, mesh.cells_dict[etype.name], etype)

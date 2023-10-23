@@ -80,7 +80,7 @@ class SimplexElement:
         """
         return np.all(self.alpha @ np.append(1.0, r) >= 0.0)
 
-    def integrate(self, integrand: Callable) -> np.ndarray:
+    def integrate(self, integrand: Callable, dtype: np.dtype = float) -> np.ndarray:
         """Performs cubature over the n-simplex.
 
         Parameters
@@ -88,10 +88,8 @@ class SimplexElement:
         integrand : callable
             The integrand to integrate. This must be a function of the
             form integrand(r) where r is the point to evaluate at.
-        order : int, optional
-            The order of the quadrature scheme to use. The default is 1.
-            This is because the quadrature scheme is only used to
-            integrate linear functions.
+        dtype : np.dtype, optional
+            The data type of the integral. The default is float.
 
         Returns
         -------
@@ -99,7 +97,9 @@ class SimplexElement:
             The integral of the integrand over the element.
 
         """
-        return self.quadrature_scheme.integrate(integrand, nodes=self.nodes)
+        return self.quadrature_scheme.integrate(
+            integrand, nodes=self.nodes, dtype=dtype
+        )
 
     def N(self, node: int, r: ArrayLike) -> float:
         """Evaluates the nodal shape function at the given point.
@@ -160,7 +160,7 @@ class SimplexElement:
         result = integrand(0, 0, np.zeros(self.dim))
         return np.shape(np.squeeze(result))
 
-    def _matrix(self, integrand: Callable) -> np.ndarray:
+    def _matrix(self, integrand: Callable, dtype: np.dtype) -> np.ndarray:
         """Computes the local element matrix for the given integrand.
 
         Parameters
@@ -169,6 +169,8 @@ class SimplexElement:
             The integrand of the matrix. This must be a function of the
             form integrand(i, j, r) where i and j are the node indices
             and r is the point to evaluate at.
+        dtype : np.dtype, optional
+            The data type of the matrix.
 
         Returns
         -------
@@ -177,16 +179,20 @@ class SimplexElement:
 
         """
         shape = self._probe(integrand)
-        m = np.zeros((self.num_nodes, self.num_nodes, *shape), dtype=complex)
+        m = np.zeros((self.num_nodes, self.num_nodes, *shape), dtype=dtype)
         for i, j in np.ndindex((self.num_nodes, self.num_nodes)):
-            m[i, j] = self.integrate(lambda r: integrand(i, j, r))
+            m[i, j] = self.integrate(lambda r: integrand(i, j, r), dtype=dtype)
         return m
 
-    def stiffness_matrix(self, function: Callable = None) -> np.ndarray:
+    def stiffness_matrix(
+        self, dtype: np.dtype, function: Callable = None
+    ) -> np.ndarray:
         """Computes the local element stiffness matrix.
 
         Parameters
         ----------
+        dtype : np.dtype
+            The data type of the matrix.
         function : callable, optional
             A weighting function for the stiffness matrix. If not given,
             the identity function is used.
@@ -204,20 +210,22 @@ class SimplexElement:
             """The integrand for the stiffness matrix."""
             return function(r) * (self.grad_N(i, r) @ self.grad_N(j, r))
 
-        return self._matrix(integrand)
+        return self._matrix(integrand, dtype=dtype)
 
-    def mass_matrix(self, function: Callable = None) -> np.ndarray:
+    def mass_matrix(self, dtype: np.dtype, function: Callable = None) -> np.ndarray:
         """Computes the local element mass matrix.
 
         Parameters
         ----------
+        dtype : np.dtype
+            The data type of the matrix.
         function : callable, optional
             A weighting function for the mass matrix. If not given, the
             identity function is used.
 
         Returns
         -------
-        array_like
+        np.ndarray
             The local element mass matrix.
 
         """
@@ -228,13 +236,15 @@ class SimplexElement:
             """The integrand for the mass matrix."""
             return function(r) * (self.N(i, r) * self.N(j, r))
 
-        return self._matrix(integrand)
+        return self._matrix(integrand, dtype=dtype)
 
-    def gradient_matrix(self, function: Callable = None) -> np.ndarray:
+    def gradient_matrix(self, dtype: np.dtype, function: Callable = None) -> np.ndarray:
         """Computes the local element gradient matrix.
 
         Parameters
         ----------
+        dtype : np.dtype
+            The data type of the matrix.
         function : callable, optional
             A weighting function for the gradient matrix. If not given,
             the identity function is used.
@@ -252,9 +262,11 @@ class SimplexElement:
             """The integrand for the gradient matrix."""
             return function(r) * self.N(i, r) * self.grad_N(j, r)
 
-        return self._matrix(integrand)
+        return self._matrix(integrand, dtype=dtype)
 
-    def get_matrix(self, matrix_type: str, function: Callable = None) -> np.ndarray:
+    def get_matrix(
+        self, matrix_type: str, dtype: np.dtype = float, function: Callable = None
+    ) -> np.ndarray:
         """Gets the given matrix type for the element.
 
         Parameters
@@ -262,6 +274,11 @@ class SimplexElement:
         matrix_type : str
             The type of matrix to get. Can be "stiffness", "mass", or
             "gradient".
+        dtype : np.dtype, optional
+            The data type of the matrix. The default is float.
+        function : callable, optional
+            A weighting function for the matrix. If not given, the
+            identity function is used.
 
         Returns
         -------
@@ -270,9 +287,9 @@ class SimplexElement:
 
         """
         if matrix_type == "stiffness":
-            return self.stiffness_matrix(function)
+            return self.stiffness_matrix(dtype, function)
         if matrix_type == "mass":
-            return self.mass_matrix(function)
+            return self.mass_matrix(dtype, function)
         if matrix_type == "gradient":
-            return self.gradient_matrix(function)
-        raise ValueError(f"Unknown matrix type {matrix_type}")
+            return self.gradient_matrix(dtype, function)
+        raise ValueError(f"Unknown matrix type '{matrix_type}'")

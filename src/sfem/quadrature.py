@@ -85,7 +85,9 @@ class QuadratureScheme:
         points = np.array(points)[:, 1:]
         return points, weights
 
-    def integrate(self, integrand: Callable, nodes: ArrayLike = None):
+    def integrate(
+        self, integrand: Callable, nodes: ArrayLike = None, dtype: np.dtype = float
+    ):
         """Evaluates the given function over the points.
 
         The integrand has to be a function that accepts a single
@@ -104,6 +106,8 @@ class QuadratureScheme:
             evaluated over the simplex spanned by the nodes. If not
             given, the integrand will be evaluated over the standard
             simplex.
+        dtype : np.dtype, optional
+            The data type of the integral. The default is float.
 
         """
         points, weights = self.points, self.weights
@@ -111,7 +115,7 @@ class QuadratureScheme:
             points, weights = self._transform_scheme(nodes)
 
         function_values = [integrand(point) for point in points]
-        return sum(w * f for w, f in zip(weights, function_values))
+        return np.sum([w * f for w, f in zip(weights, function_values)], dtype=dtype)
 
 
 class GrundmannMoeller(QuadratureScheme):
